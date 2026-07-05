@@ -11,10 +11,6 @@ headers = {
 
 def generate_review(winning_movie: str):
 
-    # ---------------------------
-    # STEP 1 - Kickoff Crew
-    # ---------------------------
-
     kickoff_url = f"{CREWAI_API_URL}/kickoff"
 
     payload = {
@@ -22,10 +18,6 @@ def generate_review(winning_movie: str):
             "winning_movie": winning_movie
         }
     }
-
-    print("Starting CrewAI...")
-    print("Kickoff URL:", kickoff_url)
-    print("Payload:", payload)
 
     kickoff_response = requests.post(
         kickoff_url,
@@ -38,71 +30,65 @@ def generate_review(winning_movie: str):
 
     kickoff_response.raise_for_status()
 
-    kickoff_json = kickoff_response.json()
-
-    kickoff_id = kickoff_json.get("kickoff_id")
-
-    if not kickoff_id:
-        raise Exception(f"No kickoff_id returned.\nResponse: {kickoff_json}")
+    kickoff_id = kickoff_response.json()["kickoff_id"]
 
     print("Kickoff ID:", kickoff_id)
-
-    # ---------------------------
-    # STEP 2 - Poll Status
-    # ---------------------------
 
     status_url = f"{CREWAI_API_URL}/status/{kickoff_id}"
 
     print("Status URL:", status_url)
 
-    timeout = 180   # 3 minutes
+    timeout = 300          # wait up to 5 minutes
     start = time.time()
 
     while True:
-
-        if time.time() - start > timeout:
-            raise Exception("Timed out waiting for CrewAI.")
 
         response = requests.get(
             status_url,
             headers=headers
         )
 
-        print("--------------------------------")
+        print("-----------------------------------")
         print("Status Code:", response.status_code)
         print("Raw Response:")
         print(response.text)
-        print("--------------------------------")
 
         response.raise_for_status()
 
         result = response.json()
 
-        # Return immediately if CrewAI already returned final output
-        if "result" in result:
-            print("Final Result Found")
+        state = result.get("state")
+        status = result.get("status")
+
+        print("State :", state)
+        print("Status:", status)
+
+        # -------- SUCCESS --------
+
+        if result.get("result") is not None:
+            print("Result Found")
             return result
 
-        if "output" in result:
-            print("Final Output Found")
+        if result.get("result_json") is not None:
+            print("Result JSON Found")
             return result
 
-        status = (
-            result.get("status")
-            or result.get("state")
-            or result.get("execution_status")
-        )
+        if result.get("output") is not None:
+            print("Output Found")
+            return result
 
-        print("Detected Status:", status)
+        # -------- FAILED --------
 
-        if status:
+        if state == "FAILED":
+            raise Exception("CrewAI execution failed.")
 
-            status = status.upper()
+        if status and "failed" in status.lower():
+            raise Exception("CrewAI execution failed.")
 
-            if status in ["COMPLETED", "SUCCESS", "FINISHED"]:
-                return result
+        # -------- TIMEOUT --------
 
-            if status in ["FAILED", "ERROR"]:
-                raise Exception(f"CrewAI Failed:\n{result}")
+        if time.time() - start > timeout:
+            raise Exception("CrewAI execution timed out after 5 minutes.")
 
+        print("Still waiting...")
         time.sleep(3)
