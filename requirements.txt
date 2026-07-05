@@ -3,3 +3,7 @@ uvicorn
 python-dotenv
 httpx
 supabase
+fastapi
+uvicorn
+requests
+python-dotenv
